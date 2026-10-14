@@ -13,6 +13,9 @@ import { pool } from "../src/lib/pool";
 import { scrapePerson } from "../src/lib/scrape";
 import { pairKey, type Dataset, type PersonInput, type PersonRecord } from "../src/lib/types";
 
+// Load .env.local / .env (Node 22+) so the script works the same as `next dev`; real env vars win.
+for (const f of [".env.local", ".env"]) { try { process.loadEnvFile(f); } catch { /* file absent */ } }
+
 const OUT = path.join(process.cwd(), "data", "demo.json");
 const C = Number(process.env.CONCURRENCY || 6);
 

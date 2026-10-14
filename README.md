@@ -53,8 +53,8 @@ URL inputs are strictly validated (`linkedin.com/in/<slug>`, `instagram.com/<han
 ## Setup
 
 ```bash
-npm install
-cp .env.example .env.local     # set MISTRAL_API_KEY (+ APIFY_TOKEN)
+npm install                    # required first (installs tsx, next, ...). Needs Node 22+
+cp .env.example .env.local     # Windows: copy .env.example .env.local   - then set MISTRAL_API_KEY (+ APIFY_TOKEN)
 npm run dev                    # http://localhost:3000
 npm run generate:demo          # pre-run the 25 seed people → data/demo.json (LIMIT=6 for a smoke test)
 ```
