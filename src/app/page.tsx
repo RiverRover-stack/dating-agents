@@ -43,7 +43,7 @@ export default function Home() {
         <div className="mt-6 flex justify-center gap-3"><Link href="/demo" className="btn btn-ghost">View the 25-person demo →</Link></div>
       </section>
 
-      {health && !health.llm && <div className="card border-rose/50 p-4 text-sm text-rose">This deployment has no ANTHROPIC_API_KEY configured, so live runs are disabled. The demo still works.</div>}
+      {health && !health.llm && <div className="card border-rose/50 p-4 text-sm text-rose">This deployment has no MISTRAL_API_KEY configured, so live runs are disabled. The demo still works.</div>}
 
       <section className="card p-6">
         <div className="mb-4 flex items-end justify-between">

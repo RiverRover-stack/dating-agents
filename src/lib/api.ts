@@ -1,6 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { llmConfigured } from "./llm";
+import { MistralError } from "./mistral";
 
 const hits = new Map<string, number[]>();
 
@@ -21,12 +21,14 @@ export function limited(req: NextRequest, bucket: string, max: number, windowMs 
 }
 
 export function needLlm(): NextResponse | null {
-  return llmConfigured() ? null : NextResponse.json({ error: "Server is missing ANTHROPIC_API_KEY, so agents cannot run." }, { status: 503 });
+  return llmConfigured() ? null : NextResponse.json({ error: "Server is missing MISTRAL_API_KEY, so agents cannot run." }, { status: 503 });
 }
 
 export function errorResponse(e: unknown): NextResponse {
-  if (e instanceof Anthropic.RateLimitError) return NextResponse.json({ error: "The model is rate-limited right now. Retrying shortly.", retryAfter: 10 }, { status: 429 });
-  if (e instanceof Anthropic.APIConnectionError) return NextResponse.json({ error: "Could not reach the model API." }, { status: 502 });
-  if (e instanceof Anthropic.APIError) return NextResponse.json({ error: `Model API error (${e.status}).` }, { status: 502 });
+  if (e instanceof MistralError) {
+    if (e.status === 429) return NextResponse.json({ error: "The model is rate-limited right now. Retrying shortly.", retryAfter: e.retryAfter ?? 10 }, { status: 429 });
+    if (e.status === 503) return NextResponse.json({ error: e.message }, { status: 503 });
+    return NextResponse.json({ error: e.status === 502 ? "Could not reach the Mistral API." : `Model API error (${e.status}).` }, { status: 502 });
+  }
   return NextResponse.json({ error: e instanceof Error ? e.message : "Unexpected error" }, { status: 500 });
 }

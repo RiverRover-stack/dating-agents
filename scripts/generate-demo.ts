@@ -2,7 +2,7 @@
  * Pre-runs the REAL pipeline for the seed dataset and caches it in data/demo.json:
  *   scrape (Apify -> public metadata fallback) -> analyze -> date every pair -> rank everyone.
  * Resumable: re-running skips anything already in data/demo.json.
- * Needs ANTHROPIC_API_KEY (and APIFY_TOKEN for full-profile scraping).
+ * Needs MISTRAL_API_KEY (and APIFY_TOKEN for full-profile scraping).
  *   npm run generate:demo            # all seed people
  *   LIMIT=6 npm run generate:demo    # smoke test with the first 6
  */
@@ -17,7 +17,7 @@ const OUT = path.join(process.cwd(), "data", "demo.json");
 const C = Number(process.env.CONCURRENCY || 6);
 
 async function main() {
-  if (!llmConfigured()) throw new Error("ANTHROPIC_API_KEY is required");
+  if (!llmConfigured()) throw new Error("MISTRAL_API_KEY is required");
   let seed: PersonInput[] = JSON.parse(await readFile(path.join(process.cwd(), "data", "seed.json"), "utf8"));
   if (process.env.LIMIT) seed = seed.slice(0, Number(process.env.LIMIT));
   let ds: Dataset = { people: [], dates: [], rankings: [] };
