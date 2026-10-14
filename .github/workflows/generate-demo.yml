@@ -1,6 +1,6 @@
 name: Generate 25-person demo
 # Runs the REAL pipeline (scrape -> analyze -> 300+ agent dates -> rankings) for data/seed.json
-# and commits the cached result to data/demo.json. Needs repo secrets ANTHROPIC_API_KEY and APIFY_TOKEN.
+# and commits the cached result to data/demo.json. Needs repo secrets MISTRAL_API_KEY and APIFY_TOKEN.
 on:
   workflow_dispatch:
     inputs:
@@ -18,7 +18,7 @@ jobs:
       - run: npm ci
       - name: Run pipeline
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
           LIMIT: ${{ inputs.limit }}
           CONCURRENCY: "6"

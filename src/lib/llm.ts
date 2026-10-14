@@ -1,16 +1,12 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
+import { chatJson, chatStream } from "./mistral";
 import type { DateResult, DateTurn, PersonInput, Profile, RankEntry, Ranking, Sources, Verdict } from "./types";
 
-export const MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
-// Dates are the volume workload (one per pair). Override with CLAUDE_DATE_MODEL to trade quality for cost.
-export const DATE_MODEL = process.env.CLAUDE_DATE_MODEL || MODEL;
+export const MODEL = process.env.MISTRAL_MODEL || "mistral-large-latest";
+// Dates are the volume workload (one per pair). Override with MISTRAL_DATE_MODEL (e.g. mistral-small-latest) to cut cost.
+export const DATE_MODEL = process.env.MISTRAL_DATE_MODEL || MODEL;
 
-let _client: Anthropic | null = null;
-const client = () => (_client ??= new Anthropic({ maxRetries: 3 }));
-
-export const llmConfigured = () => Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+export const llmConfigured = () => Boolean(process.env.MISTRAL_API_KEY);
 
 const SAFETY = `Ground rules: everything you produce is AI-generated simulation built ONLY from the two public sources provided (a LinkedIn profile and a public Instagram profile). Never invent facts, employers, relationships, locations or events that are not in the sources. Do not infer sensitive attributes (health, religion, sexuality, political views, ethnicity, finances beyond what is publicly stated). When you infer something, phrase it as an inference.`;
 
@@ -51,15 +47,19 @@ export async function analyzeProfile(person: PersonInput, sources: Sources): Pro
   }
   const block = (s: Sources["linkedin"]) =>
     `<${s.source} url="${s.url}" status="${s.status}">\n${s.status === "failed" ? `(unavailable: ${s.note})` : s.text}\n</${s.source}>`;
-  const res = await client().messages.parse({
-    model: MODEL,
-    max_tokens: 16000,
-    system: ANALYZER_SYSTEM,
-    output_config: { effort: "medium", format: zodOutputFormat(ProfileSchema) },
-    messages: [{ role: "user", content: `Person name hint: ${person.name ?? "(not given; derive from sources)"}\n\n${block(sources.linkedin)}\n\n${block(sources.instagram)}\n\nWrite the profile.` }],
+  const p = await chatJson(ProfileSchema, "profile", {
+    model: MODEL, maxTokens: 4000, temperature: 0.3,
+    messages: [
+      { role: "system", content: ANALYZER_SYSTEM },
+      { role: "user", content: `Person name hint: ${person.name ?? "(not given; derive from sources)"}
+
+${block(sources.linkedin)}
+
+${block(sources.instagram)}
+
+Write the profile.` },
+    ],
   });
-  const p = res.parsed_output;
-  if (!p) throw new Error("Analyzer returned no structured output");
   const caveats = [...p.caveats];
   for (const s of [sources.linkedin, sources.instagram]) {
     if (s.status !== "ok" && s.note) caveats.push(`${s.source}: ${s.note}`);
@@ -121,16 +121,15 @@ export async function runDate(pa: Profile, pb: Profile, onDelta?: (text: string)
   let lastErr: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const stream = client().messages.stream({
-        model: DATE_MODEL,
-        max_tokens: 8000,
-        system: DATE_SYSTEM,
-        output_config: { effort: "low" },
-        messages: [{ role: "user", content: `<person_a>\n${brief(pa)}\n</person_a>\n\n<person_b>\n${brief(pb)}\n</person_b>\n\nRun the date between Agent A (for ${pa.displayName}) and Agent B (for ${pb.displayName}).` }],
-      });
-      let buf = "";
       let sent = 0;
-      stream.on("text", (t) => {
+      let buf = "";
+      const text = await chatStream({
+        model: DATE_MODEL, maxTokens: 2500, temperature: 0.85,
+        messages: [
+          { role: "system", content: DATE_SYSTEM },
+          { role: "user", content: `<person_a>\n${brief(pa)}\n</person_a>\n\n<person_b>\n${brief(pb)}\n</person_b>\n\nRun the date between Agent A (for ${pa.displayName}) and Agent B (for ${pb.displayName}).` },
+        ],
+      }, (t) => {
         buf += t;
         if (!onDelta) return;
         const cut = buf.indexOf("===VERDICT===");
@@ -139,9 +138,6 @@ export async function runDate(pa: Profile, pb: Profile, onDelta?: (text: string)
         const safe = cut === -1 ? visible.slice(0, Math.max(sent, visible.length - 13)) : visible;
         if (safe.length > sent) { onDelta(safe.slice(sent)); sent = safe.length; }
       });
-      const final = await stream.finalMessage();
-      if (final.stop_reason === "refusal") throw new Error("Model declined this date");
-      const text = final.content.filter((b) => b.type === "text").map((b) => (b as { text: string }).text).join("");
       const result = parseDate(text, pa.id, pb.id);
       if (onDelta && sent < text.indexOf("===VERDICT===")) onDelta(text.slice(sent, text.indexOf("===VERDICT===")));
       return result;
@@ -187,12 +183,21 @@ export async function rankFor(me: Profile, others: Profile[], dates: DateResult[
   });
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const res = await client().messages.parse({
-        model: MODEL, max_tokens: 16000, system: RANK_SYSTEM,
-        output_config: { effort: "medium", format: zodOutputFormat(RankSchema) },
-        messages: [{ role: "user", content: `<person>\n${brief(me)}\n</person>\n\n<candidates>\n${JSON.stringify(cand)}\n</candidates>\n\nRank all ${ids.length} candidates for ${me.displayName}.` }],
-      });
-      const r = res.parsed_output?.ranking;
+      const r = (await chatJson(RankSchema, "ranking", {
+        model: MODEL, maxTokens: 6000, temperature: 0.3,
+        messages: [
+          { role: "system", content: RANK_SYSTEM },
+          { role: "user", content: `<person>
+${brief(me)}
+</person>
+
+<candidates>
+${JSON.stringify(cand)}
+</candidates>
+
+Rank all ${ids.length} candidates for ${me.displayName}.` },
+        ],
+      })).ranking;
       if (r && r.length === ids.length && new Set(r.map((x) => x.id)).size === ids.length && r.every((x) => ids.includes(x.id))) {
         return { for: me.id, basis: "llm", entries: r.map((x, i) => ({ id: x.id, rank: i + 1, score: Math.max(0, Math.min(100, Math.round(x.score))), reason: x.reason })) };
       }

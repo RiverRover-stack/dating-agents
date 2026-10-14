@@ -24,9 +24,9 @@ Each person is represented by an AI agent. Paste a **public LinkedIn** and a **p
  browser (orchestrator, bounded concurrency, retry/backoff on 429)
    │
    ├─ POST /api/scrape   → scraper layer (Apify → public-metadata fallback)       src/lib/scrape.ts
-   ├─ POST /api/analyze  → profile-analyzer agent (Claude, structured JSON)       src/lib/llm.ts
-   ├─ POST /api/date     → dating-simulator agent pair (Claude, NDJSON stream)    src/lib/llm.ts
-   └─ POST /api/rank     → ranker agent (Claude, structured JSON + validation)    src/lib/llm.ts
+   ├─ POST /api/analyze  → profile-analyzer agent (Mistral, JSON-schema output)       src/lib/llm.ts
+   ├─ POST /api/date     → dating-simulator agent pair (Mistral, NDJSON stream)    src/lib/llm.ts
+   └─ POST /api/rank     → ranker agent (Mistral, JSON schema + validation)    src/lib/llm.ts
 
  data/seed.json   25 real people (name, LinkedIn, Instagram)
  data/demo.json   cached pipeline output for the seed (profiles, 300 dates, rankings)
@@ -37,7 +37,7 @@ Each person is represented by an AI agent. Paste a **public LinkedIn** and a **p
 * **Dates** are one conversation per unordered pair (8 turns, ~30-60 words/turn, `effort: low`), streamed to the UI as NDJSON. The same transcript yields two verdicts (A→B and B→A), so 25 people = 300 calls, not 600.
 * **Ranking** is a single structured call per person over all other profiles + their date verdicts; the response is validated (every candidate exactly once). If validation fails twice it falls back to a deterministic order from date scores and the UI says so.
 * **Persistence:** the demo is a committed JSON file served by `/api/demo`; a user's live run is saved in their browser (`localStorage`) so profile pages and rankings survive navigation. Custom runs may borrow cached demo profiles (and their mutual dates) as dating partners without re-running them.
-* **Models:** `claude-opus-5-5` by default (`CLAUDE_MODEL`, `CLAUDE_DATE_MODEL`). Thinking is on at low/medium effort; profiles and rankings use `output_config.format` with Zod schemas.
+* **Models:** `mistral-large-latest` by default (`MISTRAL_MODEL`, `MISTRAL_DATE_MODEL`), called over the Mistral chat-completions REST API (`src/lib/mistral.ts`) with retry/backoff on 429/5xx. Profiles and rankings use JSON-schema `response_format` (generated from Zod, then re-validated); dates stream over SSE.
 
 ## How scraping works (compliance first)
 
@@ -54,21 +54,21 @@ URL inputs are strictly validated (`linkedin.com/in/<slug>`, `instagram.com/<han
 
 ```bash
 npm install
-cp .env.example .env.local     # set ANTHROPIC_API_KEY (+ APIFY_TOKEN)
+cp .env.example .env.local     # set MISTRAL_API_KEY (+ APIFY_TOKEN)
 npm run dev                    # http://localhost:3000
 npm run generate:demo          # pre-run the 25 seed people → data/demo.json (LIMIT=6 for a smoke test)
 ```
 
 | Env var | Required | Purpose |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | yes | Claude API (server-side only) |
+| `MISTRAL_API_KEY` | yes | Mistral API (server-side only) |
 | `APIFY_TOKEN` | recommended | Reliable public LinkedIn/Instagram data; without it only public meta tags are used |
-| `CLAUDE_MODEL`, `CLAUDE_DATE_MODEL` | no | Model overrides |
+| `MISTRAL_MODEL`, `MISTRAL_DATE_MODEL` | no | Model overrides |
 | `APIFY_INSTAGRAM_ACTOR`, `APIFY_LINKEDIN_ACTOR` | no | Swap scraping actors |
 
 **Deploy (Vercel):** import the repo, add the env vars, deploy. API routes set `maxDuration` (60-180 s). **Render/other Node hosts:** `npm run build && npm start`.
 
-**Generating the demo in CI:** add repo secrets `ANTHROPIC_API_KEY` + `APIFY_TOKEN`, then run the *Generate 25-person demo* workflow; it commits `data/demo.json`.
+**Generating the demo in CI:** add repo secrets `MISTRAL_API_KEY` + `APIFY_TOKEN`, then run the *Generate 25-person demo* workflow; it commits `data/demo.json`.
 
 ## Guardrails
 
@@ -83,4 +83,4 @@ npm run generate:demo          # pre-run the 25 seed people → data/demo.json (
 
 ## Scripts
 
-`dev`, `build`, `start`, `lint`, `typecheck`, `generate:demo`. A test-only mock of the Anthropic API lives in `test/mock-anthropic.mjs` for exercising the streaming/parsing plumbing without a key.
+`dev`, `build`, `start`, `lint`, `typecheck`, `generate:demo`. A test-only mock of the Mistral API lives in `test/mock-mistral.mjs` for exercising the streaming/parsing plumbing without a key.
